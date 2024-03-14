@@ -11,19 +11,37 @@ import (
 // GetHostDistroName returns the name of the host distribution, such as
 // "fedora-32" or "rhel-8.2". It does so by reading the /etc/os-release file.
 func GetHostDistroName() (string, error) {
-	f, err := os.Open("/etc/os-release")
+	osrelease, err := GetHostOSRelease()
 	if err != nil {
 		return "", err
+	}
+	name := osrelease["ID"] + "-" + osrelease["VERSION_ID"]
+	return name, nil
+}
+
+func GetHostOSRelease() (map[string]string, error) {
+	f, err := os.Open("/etc/os-release")
+	if err != nil {
+		return nil, err
 	}
 	defer f.Close()
 	osrelease, err := readOSRelease(f)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	name := osrelease["ID"] + "-" + osrelease["VERSION_ID"]
+	return osrelease, err
+}
 
-	return name, nil
+func IsHostRhelClone() (bool, error) {
+	osrelease, err := GetHostOSRelease()
+	if err != nil {
+		return false, err
+	}
+	if strings.HasPrefix(osrelease["PLATFORM_ID"], "platform:el") && osrelease["ID"] != "centos" {
+		return true, nil
+	}
+	return false, nil
 }
 
 func readOSRelease(r io.Reader) (map[string]string, error) {

@@ -155,7 +155,23 @@ func newDistro(name string, minor int) *distribution {
 			defaultImageConfig: defaultDistroImageConfig,
 		}
 	default:
-		panic(fmt.Sprintf("unknown distro name: %s", name))
+		if IsDistroRhelClone(name) {
+			hostOsRelease, _ := distro.GetHostOSRelease()
+			rd = distribution{
+				name:               fmt.Sprintf("%s-9.%d", hostOsRelease["ID"], minor),
+				product:            hostOsRelease["NAME"],
+				osVersion:          fmt.Sprintf("9.%d", minor),
+				releaseVersion:     "9",
+				modulePlatformID:   "platform:el9",
+				vendor:             hostOsRelease["ID"],
+				ostreeRefTmpl:      fmt.Sprintf("%s/9/%%s/edge", hostOsRelease["ID"]),
+				isolabelTmpl:       fmt.Sprintf("%s-9-%d-0-BaseOS-%%s", strings.ToUpper(hostOsRelease["ID"]), minor),
+				runner:             &runner.RHEL{Major: uint64(9), Minor: uint64(minor)},
+				defaultImageConfig: defaultDistroImageConfig,
+			}
+		} else {
+			panic(fmt.Sprintf("unknown distro name: %s", name))
+		}
 	}
 
 	// Architecture definitions
@@ -464,18 +480,27 @@ func newDistro(name string, minor int) *distribution {
 	return &rd
 }
 
+func IsDistroRhelClone(idName string) bool {
+	// Check if the host is RHEL-like
+	isHostRhelClone, _ := distro.IsHostRhelClone()
+	hostOsRelease, _ := distro.GetHostOSRelease()
+	isDistroNameSameAsHost := (hostOsRelease["ID"] == idName)
+
+	return (isHostRhelClone && isDistroNameSameAsHost)
+}
+
 func ParseID(idStr string) (*distro.ID, error) {
 	id, err := distro.ParseID(idStr)
 	if err != nil {
 		return nil, err
 	}
 
-	if id.Name != "rhel" && id.Name != "centos" {
+	if id.Name != "rhel" && id.Name != "centos" && !IsDistroRhelClone(id.Name) {
 		return nil, fmt.Errorf("invalid distro name: %s", id.Name)
 	}
 
 	// Backward compatibility layer for "rhel-93" or "rhel-910"
-	if id.Name == "rhel" && id.MinorVersion == -1 {
+	if (id.Name == "rhel" || IsDistroRhelClone(id.Name)) && id.MinorVersion == -1 {
 		if id.MajorVersion/10 == 9 {
 			// handle single digit minor version
 			id.MinorVersion = id.MajorVersion % 10
@@ -497,7 +522,7 @@ func ParseID(idStr string) (*distro.ID, error) {
 	}
 
 	// RHEL uses minor version
-	if id.Name == "rhel" && id.MinorVersion == -1 {
+	if (id.Name == "rhel" || IsDistroRhelClone(id.Name)) && id.MinorVersion == -1 {
 		return nil, fmt.Errorf("rhel requires minor version, but got: %d", id.MinorVersion)
 	}
 
